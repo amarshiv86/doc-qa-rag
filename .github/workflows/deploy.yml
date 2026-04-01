@@ -1,0 +1,60 @@
+name: Deploy Doc Q&A → HF Spaces
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app.py"
+      - "requirements.txt"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install huggingface_hub
+        run: pip install huggingface_hub
+
+      - name: Create HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python3 - <<'EOF'
+          from huggingface_hub import HfApi
+          import os
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          api.create_repo(
+              repo_id="amarshiv86/doc-qa-rag",
+              repo_type="space",
+              space_sdk="gradio",
+              private=False,
+              exist_ok=True,
+          )
+          print("Space ready ✓")
+          EOF
+
+      - name: Push files to HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python3 - <<'EOF'
+          from huggingface_hub import HfApi
+          import os
+          api   = HfApi(token=os.environ["HF_TOKEN"])
+          SPACE = "amarshiv86/doc-qa-rag"
+          for f in ["app.py", "requirements.txt"]:
+              print(f"  uploading {f}...")
+              api.upload_file(
+                  path_or_fileobj=f,
+                  path_in_repo=f,
+                  repo_id=SPACE,
+                  repo_type="space",
+                  commit_message=f"ci: deploy {f}",
+              )
+          print("Done ✓")
+          EOF
+
+      - name: Print URL
+        run: echo "✅ https://huggingface.co/spaces/amarshiv86/doc-qa-rag"
