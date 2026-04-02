@@ -1,17 +1,18 @@
 import os
+import requests
 import gradio as gr
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
-from huggingface_hub import InferenceClient
 
 # ── Config ────────────────────────────────────────────────────
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-LLM_MODEL   = "HuggingFaceH4/zephyr-7b-beta"
+LLM_MODEL   = "google/flan-t5-large"   # free, no special permissions needed
 CHROMA_DIR  = "/tmp/chroma_db"
 HF_TOKEN    = os.getenv("HF_TOKEN", "")
+HF_API_URL  = f"https://api-inference.huggingface.co/models/{LLM_MODEL}"
 
 # ── Embeddings ────────────────────────────────────────────────
 print("Loading embedding model...")
@@ -22,12 +23,27 @@ embeddings = HuggingFaceEmbeddings(
 )
 print("Embeddings ready ✓")
 
-# ── LLM client ────────────────────────────────────────────────
-client = InferenceClient(model=LLM_MODEL, token=HF_TOKEN if HF_TOKEN else None)
-
 # ── State ─────────────────────────────────────────────────────
 vectorstore = None
 current_doc = None
+
+# ── LLM call via HF Inference API (classic, no router) ────────
+def call_llm(prompt: str) -> str:
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 256,
+            "temperature": 0.3,
+            "do_sample": False,
+        }
+    }
+    resp = requests.post(HF_API_URL, headers=headers, json=payload, timeout=30)
+    resp.raise_for_status()
+    result = resp.json()
+    if isinstance(result, list):
+        return result[0].get("generated_text", "").strip()
+    return str(result)
 
 # ── PDF processing ────────────────────────────────────────────
 def process_pdf(pdf_file):
@@ -55,52 +71,44 @@ def process_pdf(pdf_file):
         return f"❌ Error: {str(e)}"
 
 # ── RAG query ─────────────────────────────────────────────────
-# ── RAG query ─────────────────────────────────────────────────
 def answer_question(question, history):
     global vectorstore
     if not question.strip():
         return history, ""
-    
     if vectorstore is None:
-        # Gradio 5+ uses a list of dicts for history
-        history.append({"role": "user", "content": question})
-        history.append({"role": "assistant", "content": "⚠️ Please upload a PDF first."})
+        history = history + [
+            {"role": "user",      "content": question},
+            {"role": "assistant", "content": "⚠️ Please upload a PDF first."},
+        ]
         return history, ""
-    
     try:
-        retriever     = vectorstore.as_retriever(search_kwargs={"k": 4})
+        retriever     = vectorstore.as_retriever(search_kwargs={"k": 3})
         relevant_docs = retriever.invoke(question)
         context       = "\n\n".join([d.page_content for d in relevant_docs])
-        
-        # Format the prompt for a Chat model
-        messages = [
-            {
-                "role": "system", 
-                "content": "You are a helpful assistant. Answer using ONLY the context provided. If the answer is not there, say 'I couldn't find that in the document.'"
-            },
-            {
-                "role": "user", 
-                "content": f"Context:\n{context}\n\nQuestion: {question}"
-            }
+
+        prompt = f"""Answer the question based on the context below.
+If the answer is not in the context, say "I couldn't find that in the document."
+
+Context: {context}
+
+Question: {question}
+Answer:"""
+
+        answer = call_llm(prompt)
+        # flan-t5 returns only the answer, strip the prompt if echoed
+        if "Answer:" in answer:
+            answer = answer.split("Answer:")[-1].strip()
+
+        history = history + [
+            {"role": "user",      "content": question},
+            {"role": "assistant", "content": answer},
         ]
-
-        # Use chat_completion instead of text_generation
-        response = client.chat_completion(
-            messages=messages,
-            max_tokens=512,
-            temperature=0.3,
-            stop=["Question:", "Context:"] # Changed from stop_sequences to stop
-        )
-        
-        answer = response.choices[0].message.content
-        
-        history.append({"role": "user", "content": question})
-        history.append({"role": "assistant", "content": answer})
         return history, ""
-
     except Exception as e:
-        history.append({"role": "user", "content": question})
-        history.append({"role": "assistant", "content": f"❌ Error: {str(e)}"})
+        history = history + [
+            {"role": "user",      "content": question},
+            {"role": "assistant", "content": f"❌ Error: {str(e)}"},
+        ]
         return history, ""
 
 def clear_chat():
@@ -116,7 +124,7 @@ def clear_db():
 with gr.Blocks(title="Document Q&A · RAG") as demo:
     gr.Markdown("""
     # 📄 Document Q&A — RAG Pipeline
-    Upload a PDF and ask questions. Powered by **LangChain + ChromaDB + Zephyr-7B**.
+    Upload a PDF and ask questions. Powered by **LangChain + ChromaDB + Flan-T5**.
     """)
 
     with gr.Row():
@@ -130,7 +138,7 @@ with gr.Blocks(title="Document Q&A · RAG") as demo:
             1. Upload any PDF document
             2. Text is chunked and embedded into ChromaDB
             3. Your question retrieves the most relevant chunks
-            4. Zephyr-7B generates an answer from those chunks
+            4. Flan-T5 generates an answer from those chunks
 
             ### Tips
             - Ask specific questions about the document
