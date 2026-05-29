@@ -1,18 +1,22 @@
 import os
 import requests
 import gradio as gr
+import traceback
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
+from huggingface_hub import InferenceClient
 
 # ── Config ────────────────────────────────────────────────────
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-LLM_MODEL   = "google/flan-t5-large"   # free, no special permissions needed
+LLM_MODEL = "meta-llama/Llama-3.2-1B-Instruct"   
 CHROMA_DIR  = "/tmp/chroma_db"
 HF_TOKEN    = os.getenv("HF_TOKEN", "")
-HF_API_URL  = f"https://api-inference.huggingface.co/models/{LLM_MODEL}"
+
+# Initialize the official SDK client (Bypasses URL management entirely)
+client = InferenceClient(token=HF_TOKEN if HF_TOKEN else None)
 
 # ── Embeddings ────────────────────────────────────────────────
 print("Loading embedding model...")
@@ -29,21 +33,20 @@ current_doc = None
 
 # ── LLM call via HF Inference API (classic, no router) ────────
 def call_llm(prompt: str) -> str:
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
-    payload = {
-        "inputs": prompt,
-        "parameters": {
-            "max_new_tokens": 256,
-            "temperature": 0.3,
-            "do_sample": False,
-        }
-    }
-    resp = requests.post(HF_API_URL, headers=headers, json=payload, timeout=30)
-    resp.raise_for_status()
-    result = resp.json()
-    if isinstance(result, list):
-        return result[0].get("generated_text", "").strip()
-    return str(result)
+    try:
+        completion = client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=256,
+            temperature=0.3
+        )
+        # Add [0] here to extract the first choice from the list
+        return completion.choices[0].message.content.strip()
+        
+    except Exception as api_error:
+        return f"API Exception: {str(api_error)} \nDetails: {traceback.format_exc()}"
 
 # ── PDF processing ────────────────────────────────────────────
 def process_pdf(pdf_file):
