@@ -12,7 +12,7 @@ EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 LLM_MODEL   = "google/flan-t5-large"   # free, no special permissions needed
 CHROMA_DIR  = "/tmp/chroma_db"
 HF_TOKEN    = os.getenv("HF_TOKEN", "")
-HF_API_URL  = f"https://huggingface.co/models/{LLM_MODEL}"
+HF_API_URL  = f"https://api-inference.huggingface.co/models/{LLM_MODEL}"
 
 # ── Embeddings ────────────────────────────────────────────────
 print("Loading embedding model...")
