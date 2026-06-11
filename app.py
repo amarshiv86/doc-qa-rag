@@ -127,7 +127,7 @@ def clear_db():
 with gr.Blocks(title="Document Q&A · RAG") as demo:
     gr.Markdown("""
     # 📄 Document Q&A — RAG Pipeline
-    Upload a PDF and ask questions. Powered by **LangChain + ChromaDB + Flan-T5**.
+    Upload a PDF and ask questions. Powered by **LangChain + ChromaDB + Llama-3.2**.
     """)
 
     with gr.Row():
