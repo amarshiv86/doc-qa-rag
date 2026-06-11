@@ -24,9 +24,9 @@ all-MiniLM-L6-v2 — embed chunks into vectors
     ↓
 ChromaDB — store + index vectors
     ↓
-User Question → embed → similarity search → top-4 chunks
+User Question → embed → similarity search → top-3 chunks
     ↓
-Zephyr-7B (HF Inference API) — generate answer from chunks
+Llama-3.2-1B-Instruct (HF Inference API) — generate answer from chunks
     ↓
 Answer grounded in document
 ```
@@ -41,7 +41,7 @@ Answer grounded in document
 | Text chunking | LangChain RecursiveCharacterTextSplitter |
 | Embeddings | sentence-transformers/all-MiniLM-L6-v2 (local, free) |
 | Vector store | ChromaDB |
-| LLM | HuggingFaceH4/zephyr-7b-beta (HF Inference API, free) |
+| LLM | meta-llama/Llama-3.2-1B-Instruct (HF Inference API) |
 | Orchestration | LangChain |
 | UI | Gradio |
 | CI/CD | GitHub Actions |
